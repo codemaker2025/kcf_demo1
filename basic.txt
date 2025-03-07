@@ -1,0 +1,315 @@
+import React, { useState } from 'react';
+
+export default function Home() {
+  const [amount, setAmount] = useState('');
+  const [installments, setInstallments] = useState('');
+  const [installmentData, setInstallmentData] = useState([]);
+  const [selectedInstallments, setSelectedInstallments] = useState([]);
+
+  const installmentOptions = Array.from({ length: 12 }, (_, i) => i + 1);
+
+  const calculateInstallments = (e) => {
+    e.preventDefault();
+    
+    const totalAmount = parseFloat(amount);
+    const installmentCount = parseInt(installments);
+    
+    if (!totalAmount || !installmentCount || installmentCount <= 0) {
+      alert('Please enter valid amount and number of installments');
+      return;
+    }
+
+    const installmentAmount = totalAmount / installmentCount;
+    const today = new Date();
+    const newInstallments = [];
+
+    for (let i = 0; i < installmentCount; i++) {
+      const dueDate = new Date(today);
+      dueDate.setMonth(today.getMonth() + i);
+      
+      newInstallments.push({
+        id: `${i + 1}`,
+        amount: installmentAmount.toFixed(2),
+        dueDate: dueDate.toISOString().split('T')[0],
+        merged: false,
+        mergedFrom: null,
+        split: false,
+        originalDates: null // Added to store original dates for unmerging
+      });
+    }
+
+    setInstallmentData(newInstallments);
+    setSelectedInstallments([]);
+  };
+
+  const handleSelection = (id) => {
+    if (selectedInstallments.includes(id)) {
+      setSelectedInstallments(selectedInstallments.filter(item => item !== id));
+    } else {
+      setSelectedInstallments([...selectedInstallments, id]);
+    }
+  };
+
+  const handleDateChange = (id, newDate) => {
+    const newInstallments = installmentData.map(item => 
+      item.id === id ? { ...item, dueDate: newDate } : item
+    );
+    setInstallmentData(newInstallments);
+  };
+
+  const mergeSelectedInstallments = () => {
+    if (selectedInstallments.length < 2) {
+      alert('Please select at least 2 installments to merge');
+      return;
+    }
+  
+    const newInstallments = [...installmentData];
+    const selectedItems = selectedInstallments.map(id => 
+      newInstallments.find(item => item.id === id)
+    );
+  
+    if (selectedItems.some(item => item.merged)) {
+      alert('Cannot merge already merged installments');
+      return;
+    }
+  
+    if (selectedItems.some(item => item.split)) {
+      alert('Cannot merge installments that have been split');
+      return;
+    }
+  
+    const selectedIndices = selectedInstallments.map(id => 
+      newInstallments.findIndex(item => item.id === id)
+    ).sort((a, b) => a - b);
+  
+    const totalAmount = selectedIndices.reduce((sum, index) => 
+      sum + parseFloat(newInstallments[index].amount), 0);
+    const dates = selectedIndices.map(index => new Date(newInstallments[index].dueDate));
+    const earliestDate = new Date(Math.min(...dates)).toISOString().split('T')[0];
+    
+    // Store just the IDs for display
+    const mergedIds = selectedInstallments.join('+');
+    
+    // Store original dates separately
+    const originalDates = selectedInstallments.map(id => {
+      const item = newInstallments.find(item => item.id === id);
+      return { id, date: item.dueDate };
+    });
+  
+    const firstIndex = selectedIndices[0];
+    newInstallments[firstIndex] = {
+      ...newInstallments[firstIndex],
+      amount: totalAmount.toFixed(2),
+      dueDate: earliestDate,
+      merged: true,
+      mergedFrom: mergedIds,
+      originalDates: originalDates
+    };
+  
+    for (let i = selectedIndices.length - 1; i > 0; i--) {
+      newInstallments.splice(selectedIndices[i], 1);
+    }
+  
+    setInstallmentData(newInstallments);
+    setSelectedInstallments([]);
+  };
+
+  const unmergeSelectedInstallment = () => {
+    if (selectedInstallments.length !== 1) {
+      alert('Please select exactly 1 merged installment to unmerge');
+      return;
+    }
+
+    const newInstallments = [...installmentData];
+    const index = newInstallments.findIndex(item => item.id === selectedInstallments[0]);
+
+    if (!newInstallments[index].merged || !newInstallments[index].mergedFrom) {
+      alert('Please select a merged installment to unmerge');
+      return;
+    }
+
+    const originalIds = newInstallments[index].mergedFrom.split('+');
+    const totalAmount = parseFloat(newInstallments[index].amount);
+    const splitAmount = (totalAmount / originalIds.length).toFixed(2);
+    const originalDates = newInstallments[index].originalDates;
+
+    newInstallments.splice(index, 1);
+
+    originalIds.forEach((id, i) => {
+      // Find the original date for this ID
+      const originalDate = originalDates.find(item => item.id === id).date;
+      
+      newInstallments.splice(index + i, 0, {
+        id: id,
+        amount: splitAmount,
+        dueDate: originalDate,
+        merged: false,
+        mergedFrom: null,
+        split: false,
+        originalDates: null
+      });
+    });
+
+    setInstallmentData(newInstallments);
+    setSelectedInstallments([]);
+  };
+
+  const splitSelectedInstallment = () => {
+    if (selectedInstallments.length !== 1) {
+      alert('Please select exactly 1 installment to split');
+      return;
+    }
+  
+    const newInstallments = [...installmentData];
+    const index = newInstallments.findIndex(item => item.id === selectedInstallments[0]);
+    const selected = newInstallments[index];
+  
+    if (selected.merged) {
+      alert('Cannot split a merged installment');
+      return;
+    }
+  
+    if (selected.split) {
+      alert('Cannot split an installment that is already split');
+      return;
+    }
+  
+    const originalAmount = parseFloat(selected.amount);
+    const splitAmount = (originalAmount / 2).toFixed(2);
+    const baseDueDate = new Date(selected.dueDate);
+  
+    const parentNumber = selected.id.split('.')[0];
+    const firstPart = {
+      id: `${parentNumber}.1`,
+      amount: splitAmount,
+      dueDate: baseDueDate.toISOString().split('T')[0],
+      merged: false,
+      mergedFrom: null,
+      split: true,
+      originalDates: null
+    };
+  
+    const secondDueDate = new Date(baseDueDate);
+    secondDueDate.setMonth(secondDueDate.getMonth() + 1);
+  
+    const secondPart = {
+      id: `${parentNumber}.2`,
+      amount: splitAmount,
+      dueDate: secondDueDate.toISOString().split('T')[0],
+      merged: false,
+      mergedFrom: null,
+      split: true,
+      originalDates: null
+    };
+  
+    newInstallments.splice(index, 1, firstPart, secondPart);
+    setInstallmentData(newInstallments);
+    setSelectedInstallments([]);
+  };
+
+  return (
+    <div style={{ padding: '20px' }}>
+      <h1>Installment Calculator</h1>
+      
+      <form onSubmit={calculateInstallments}>
+        <div style={{ marginBottom: '10px' }}>
+          <label>
+            Total Amount ($):
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              step="0.01"
+              min="0"
+              style={{ marginLeft: '10px' }}
+            />
+          </label>
+        </div>
+        
+        <div style={{ marginBottom: '10px' }}>
+          <label>
+            Number of Installments:
+            <select
+              value={installments}
+              onChange={(e) => setInstallments(e.target.value)}
+              style={{ marginLeft: '10px' }}
+            >
+              <option value="">Select</option>
+              {installmentOptions.map(num => (
+                <option key={num} value={num}>{num}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        
+        <button type="submit">Calculate</button>
+      </form>
+
+      {installmentData.length > 0 && (
+        <div style={{ marginTop: '20px' }}>
+          <h2>Installment Schedule</h2>
+          <div style={{ marginBottom: '10px' }}>
+            <button 
+              onClick={mergeSelectedInstallments}
+              disabled={selectedInstallments.length < 2}
+              style={{ marginRight: '10px' }}
+            >
+              Merge Selected Installments
+            </button>
+            <button 
+              onClick={unmergeSelectedInstallment}
+              disabled={selectedInstallments.length !== 1}
+              style={{ marginRight: '10px' }}
+            >
+              Unmerge Selected Installment
+            </button>
+            <button 
+              onClick={splitSelectedInstallment}
+              disabled={selectedInstallments.length !== 1}
+            >
+              Split Selected Installment
+            </button>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ border: '1px solid black', padding: '5px' }}>Select</th>
+                <th style={{ border: '1px solid black', padding: '5px' }}>Splitted</th>
+                <th style={{ border: '1px solid black', padding: '5px' }}>Installment #</th>
+                <th style={{ border: '1px solid black', padding: '5px' }}>Amount ($)</th>
+                <th style={{ border: '1px solid black', padding: '5px' }}>Due Date</th>
+                <th style={{ border: '1px solid black', padding: '5px' }}>Merged From</th>
+              </tr>
+            </thead>
+            <tbody>
+              {installmentData.map((item) => (
+                <tr key={item.id}>
+                  <td style={{ border: '1px solid black', padding: '5px' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedInstallments.includes(item.id)}
+                      onChange={() => handleSelection(item.id)}
+                    />
+                  </td>
+                  <td style={{ border: '1px solid black', padding: '5px' }}>
+                    {item.split ? '✅' : '-'}
+                  </td>
+                  <td style={{ border: '1px solid black', padding: '5px' }}>{item.id}</td>
+                  <td style={{ border: '1px solid black', padding: '5px' }}>{item.amount}</td>
+                  <td style={{ border: '1px solid black', padding: '5px' }}>
+                    <input
+                      type="date"
+                      value={item.dueDate || ''}
+                      onChange={(e) => handleDateChange(item.id, e.target.value)}
+                    />
+                  </td>
+                  <td style={{ border: '1px solid black', padding: '5px' }}>{item.mergedFrom || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
